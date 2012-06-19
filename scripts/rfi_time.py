@@ -20,7 +20,7 @@ Revisions:
 
 import matplotlib
 matplotlib.use('TkAgg')
-import rfi_sys, time, corr, numpy, struct, sys, logging, pylab, h5py
+import rfi_sys, time, corr, numpy, struct, sys, logging, pylab, h5py, os, iniparse
 
 # what format are the snap names and how many are there per antenna
 snapName = 'snap_adc'
@@ -229,7 +229,9 @@ try:
     if file ==None:
         print 'Connecting to ROACH...',
         # make the correlator object
-        r = rfi_sys.cam.spec()
+        #-------------------------------------------------------Edit  By Chris--------------------------------------------------
+        r = rfi_sys.cam.spec(os.path.join('..', 'src', 'system_parameters'))  #Change system_parameters to use different config file, the file must be in src directory
+        #-------------------------------------------------------End Edit By Chris----------------------------------------------------
         #r = rfi_sys.rfi_sys(mode=args[0])
         if verbose:
             r.logger.setLevel(logging.DEBUG)
@@ -284,11 +286,24 @@ try:
 
     freqs=numpy.arange(n_chans)*float(bandwidth)/n_chans #channel center freqs in Hz
 
-    if opts.ant != 'none':
-        af=rfi_sys.cal.af_from_gain(freqs,rfi_sys.cal.ant_gains(opts.ant,freqs)) #antenna factor
+    #--------------------------------------------------------------------Edited By Chris----------------------------------------------------------
+    config_file = os.path.join('..', 'src', 'system_parameters')
+    af = None
+    try:
+        sys_config = iniparse.INIConfig(open(config_file, 'rb'))
+        
+    except Exception as e: 
+        print "Erorr accessing antenna bandpass file from config file"
+        print e
+
+    if sys_config['analogue_frontend']['antenna_bandpass'].strip() != 'none':
+        af=rfi_sys.cal.af_from_gain(freqs,rfi_sys.cal.ant_gains(sys_config['analogue_frontend']['antenna_bandpass'],freqs)) #antenna factor
+
         if file==None:
-            f['/'].attrs['antena_factor']=af
-            f['/'].attrs['antena_calfile']=opts.ant
+            f['antena_factor']=af
+            f['/'].attrs['antena_calfile']=sys_config['analogue_frontend']['antenna_bandpass'].strip()
+
+#----------------------------------------------------------------End Edit By Chris----------------------------------------------------------------
         units='dBuV/m'
         #rfi_sys.cal.plot_ant_gain(opts.ant,freqs)
         #rfi_sys.cal.plot_ant_factor(opts.ant,freqs)

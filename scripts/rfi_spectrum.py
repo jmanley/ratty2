@@ -18,7 +18,8 @@ Plots the spectrum from an RFI monitoring spectrometer.\n
 
 import matplotlib
 matplotlib.use('TkAgg')
-import pylab,h5py,rfi_sys, time, corr, numpy, struct, sys, logging
+import pylab,h5py,rfi_sys, time, corr, numpy, struct, sys, logging, os
+import iniparse
 
 # what format are the snap names and how many are there per antenna
 bram_out_prefix = 'store'
@@ -34,13 +35,13 @@ cal_mode='full'
 
 def exit_fail():
     print 'FAILURE DETECTED. Log entries:\n',
-    try:
-        f.flush()
-        f.close()
-        r.lh.printMessages()
-        r.fpga.stop()
-    except:
-        pass
+#    try:
+#        f.flush()
+#        f.close()
+#        r.lh.printMessages()
+#        r.fpga.stop()
+#    except:
+#        pass
     if verbose:
         raise
     exit()
@@ -255,8 +256,11 @@ try:
     if file==None:
         print 'Connecting to ROACH...',
         # make the correlator object
-        r = rfi_sys.cam.spec()
+        #-------------------------------------------------------Edit  By Chris--------------------------------------------------
+        r = rfi_sys.cam.spec(os.path.join('..', 'src', 'system_parameters'))  #Change system_parameters to use different config file, the file must be in src directory
+        #-------------------------------------------------------End Edit By Chris----------------------------------------------------
         #r = rfi_sys.rfi_sys(mode=args[0])
+
         if verbose:
             r.logger.setLevel(logging.DEBUG)
         else:
@@ -272,8 +276,8 @@ try:
         fft_shift=r.fft_shift_get()
         fft_scale=r.fft_scale
         rf_gain=r.rf_status_get()[1]
-        bandwidth=r.bandwidth
         n_chans=r.n_chans
+        bandwidth=r.bandwidth
 
         print 'Scaling back by %i accumulations.'%n_accs
 
@@ -303,6 +307,8 @@ try:
         f['/'].attrs['usrlog']=usrlog
 
         last_cnt=r.fpga.read_uint('acc_cnt')
+
+
     else:
         print 'Opening file %s...'%file
         f=h5py.File(file,'r')
@@ -315,13 +321,27 @@ try:
         rf_gain     =f['/'].attrs['rf_gain']
         fft_shift   =f['/'].attrs['fft_shift']
         freqs       =numpy.arange(n_chans)*float(bandwidth)/n_chans #channel center freqs in Hz
-        fft_scale   =2**(cal.bitcnt(fft_shift))
+        fft_scale   =2**(rfi_sys.cal.bitcnt(fft_shift))
 
-    if opts.ant != 'none':
-        af=rfi_sys.cal.af_from_gain(freqs,rfi_sys.cal.ant_gains(opts.ant,freqs)) #antenna factor
+#--------------------------------------------------------------------Edited By Chris----------------------------------------------------------
+    config_file = os.path.join('..', 'src', 'system_parameters')
+    print 'hey'
+    af = None
+    print 'hey'
+    try:
+        sys_config = iniparse.INIConfig(open(config_file, 'rb'))
+        
+    except Exception as e: 
+        print "Erorr accessing antenna bandpass file from config file"
+        print e
+
+    if sys_config['analogue_frontend']['antenna_bandpass'].strip() != 'none':
+        af=rfi_sys.cal.af_from_gain(freqs,rfi_sys.cal.ant_gains(sys_config['analogue_frontend']['antenna_bandpass'],freqs)) #antenna factor
+
         if file==None:
             f['antena_factor']=af
-            f['/'].attrs['antena_calfile']=opts.ant
+            f['/'].attrs['antena_calfile']=sys_config['analogue_frontend']['antenna_bandpass'].strip()
+#----------------------------------------------------------------End Edit By Chris----------------------------------------------------------------
         units='dBuV/m'
         #rfi_sys.cal.plot_ant_gain(opts.ant,freqs)
         #rfi_sys.cal.plot_ant_factor(opts.ant,freqs)
@@ -329,8 +349,9 @@ try:
     else:
         af=None
         units='dBm'
-
+    print 'here'
     bp=rfi_sys.cal.bandshape(freqs)
+    print 'and here'
     #rfi_sys.cal.plot_bandshape(freqs)
     if file==None:
         f['bandshape']=bp
@@ -365,7 +386,8 @@ try:
 
 except KeyboardInterrupt:
     exit_clean()
-except:
+except Exception as e:
+    print e
     exit_fail()
 
 print 'Done with all.'

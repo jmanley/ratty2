@@ -6,52 +6,64 @@ Hard-coded for 32bit unsigned numbers.
 \nAuthor: Jason Manley, Feb 2011.
 '''
 
-import corr,time,numpy,struct,sys,logging,rfi_sys,cal
+import corr,time,numpy,struct,sys,logging,rfi_sys,cal,iniparse, os
 
 front_led_layout=['adc_clip','adc_shutdown','fft_overflow','quantiser_overflow','new_accumulation','sync','NA','NA']
 
-roach='192.168.64.112'
+#roach='192.168.64.112' Edit by Chris
 #mode_params={'hr': {'bitstream':'r_spec_1ghz_16k_r106_2011_Feb_24_1810.bof',
-mode_params={
-            #'hr': {'bitstream':'r_spec_1ghz_16k_iadc_r106_2011_Mar_10_1724.bof',
-            'hr': {'bitstream':'r_spec_1ghz_16k_iadc_r107_2011_Mar_14_0850.bof',
-                    'n_chans':16384,
-                    'n_par_streams':4,
-                    'bandwidth':898000000,
-                    'desired_rf_level':-25,
-                    'adc_type':'iadc',
-                    'spectrum_bits':64,
-                    'fft_shift':0b001111111111100},
-            'hr_900': {'bitstream':'r_spec_1ghz_16k_iadc_r107_2011_Mar_14_0850.bof',
-                    'n_chans':16384,
-                    'n_par_streams':4,
-                    'bandwidth':900000000,
-                    'adc_type':'iadc',
-                    'desired_rf_level':-25,
-                    'spectrum_bits':64,
-                    'fft_shift':16383},
-            'hr_kadc': {'bitstream':'r_spec_1ghz_16k_kadc_r108_2011_Jul_26_1810.bof',
-                    'n_chans':16384,
-                    'n_par_streams':4,
-                    'bandwidth':898000000,
-                    'adc_type':'katadc',
-                    'desired_rf_level':-25,
-                    'spectrum_bits':64,
-                    'fft_shift':16383},
-             #'lr': {'bitstream':'r_spec_1ghz_1k_r108lr_2011_Feb_28_1051.bof',
-             'lr': {'bitstream':'r_spec_1ghz_1k_iadc_r108lr_2011_Feb_28_1655.bof',
-                    'n_chans':1024,
-                    'desired_rf_level':-25,
-                    'n_par_streams':4,
-                    'adc_type':'iadc',
-                    'spectrum_bits':32,
-                    'bandwidth':900000000,
-                    'fft_shift':1023},
-            }
-katcp_port=7147
+# mode_params={
+#             #'hr': {'bitstream':'r_spec_1ghz_16k_iadc_r106_2011_Mar_10_1724.bof',
+#             'hr': {'bitstream':'r_spec_1ghz_16k_iadc_r107_2011_Mar_14_0850.bof',
+#                     'n_chans':16384,
+#                     'n_par_streams':4,
+#                     'bandwidth':898000000,
+#                     'desired_rf_level':-25,
+#                     'adc_type':'iadc',
+#                     'spectrum_bits':64,
+#                     'fft_shift':0b001111111111100},
+#             'hr_900': {'bitstream':'r_spec_1ghz_16k_iadc_r107_2011_Mar_14_0850.bof',
+#                     'n_chans':16384,
+#                     'n_par_streams':4,
+#                     'bandwidth':900000000,
+#                     'adc_type':'iadc',
+#                     'desired_rf_level':-25,
+#                     'spectrum_bits':64,
+#                     'fft_shift':16383},
+#             #'hr_kadc': {'bitstream':'r_spec_1ghz_16k_kadc_r108_2011_Jul_26_1810.bof',
+#             'hr_kadc': {'bitstream':'r_spec_1ghz_16k_kadc_r108_2011_Nov_09_1541.bof',
+#                     'n_chans':16384,
+#                     'n_par_streams':4,
+#                     'bandwidth':800000000,
+#                     'adc_type':'katadc',
+#                     'desired_rf_level':-25,
+#                     'spectrum_bits':64,
+#                     'fft_shift':16383},
+#              #'lr': {'bitstream':'r_spec_1ghz_1k_r108lr_2011_Feb_28_1051.bof',
+#              'lr': {'bitstream':'r_spec_1ghz_1k_iadc_r108lr_2011_Feb_28_1655.bof',
+#                     'n_chans':1024,
+#                     'desired_rf_level':-25,
+#                     'n_par_streams':4,
+#                     'adc_type':'iadc',
+#                     'spectrum_bits':32,
+#                     'bandwidth':900000000,
+#                     'fft_shift':1023},
+#            }
+#katcp_port=7147 Edit by Chris
 
 class spec:
-    def __init__(self,mode='hr_kadc',log_handler=None,log_level=logging.INFO):
+    def __init__(self, config_file, log_handler=None, log_level=logging.INFO):
+        #-------------------------------------Code By Chris--------------------------------------------
+        self.config_file = config_file.strip()
+        try:
+            self.sys_config = iniparse.INIConfig(open(self.config_file, 'rb'))      #load config file
+        except IOError as e:
+            print "Error opening the config file : ",
+            print e
+            exit()
+        roach = self.sys_config['connection']['roach_ip'].strip()                     #load Roach IP
+        katcp_port = int(self.sys_config['connection']['katcp_port'])                  #load Roach port
+        #----------------------------------End Code By Chris-------------------------------------------
         if log_handler == None: log_handler=corr.log_handlers.DebugLogHandler(100)
         self.lh = log_handler
         self.logger = logging.getLogger('RFIsys')
@@ -66,16 +78,16 @@ class spec:
             self.logger.error('KATCP connection failure. Connection to ROACH failed.')
             print('KATCP connection failure.')
             raise RuntimeError("Connection to FPGA board failed.")
-        self.mode=mode
-        self.n_chans=mode_params[mode]['n_chans']
-        self.bandwidth=mode_params[mode]['bandwidth']
-        self.n_par_streams=mode_params[mode]['n_par_streams']
-        self.bitstream=mode_params[mode]['bitstream']
-        self.fft_shift=mode_params[mode]['fft_shift']
-        self.adc_type=mode_params[mode]['adc_type']
-        self.desired_rf_level=mode_params[mode]['desired_rf_level']
-        self.spectrum_bits=mode_params[mode]['spectrum_bits']
-        self.atten_gain_map=cal.atten_gain_map
+        #--------------------------------Edited by Chris-------------------------------------------------
+        #self.mode = self.sys_config['digital_system_parameters']['mode'].strip()
+        self.n_chans = int(self.sys_config['digital_system_parameters']['n_chans'])
+        self.bandwidth = int(self.sys_config['digital_system_parameters']['bandwidth'])
+        self.n_par_streams = int(self.sys_config['digital_system_parameters']['n_par_streams'])
+        self.bitstream = self.sys_config['digital_system_parameters']['bitstream']
+        self.fft_shift = int(self.sys_config['digital_system_parameters']['fft_shift'])
+        self.adc_type = self.sys_config['digital_system_parameters']['adc_type']
+        self.desired_rf_level = int(self.sys_config['digital_system_parameters']['desired_rf_level'])
+        self.spectrum_bits = int(self.sys_config['digital_system_parameters']['spectrum_bits'])
         if self.adc_type== 'katadc':
             self.fpga_clk=self.bandwidth/4
             self.sample_clk=self.bandwidth*2
@@ -87,6 +99,9 @@ class spec:
         self.chan_width=numpy.float(self.bandwidth)/self.n_chans 
         self.freqs=numpy.arange(self.n_chans)*float(self.bandwidth)/self.n_chans #channel center freqs in Hz
         #self.freqs=numpy.arange(self.n_chans)*float(self.bandwidth)/self.n_chans/1.e6 + float(self.bandwidth)/self.n_chans/2.e6 #channel start freqs in MHz (lower freq half-power boundary)
+
+
+        #-----------------------------End Edited By Chris -----------------------------------------------
 
     def initialise(self,rf_gain=-10,acc_time=1,fft_shift=0xffffffff):
         """Initialises the system to defaults."""
@@ -287,4 +302,11 @@ def ByteToHex( byteStr ):
     #    return ''.join( hex ).strip()        
 
     return ''.join( [ "%02X " % ord( x ) for x in byteStr ] ).strip()
+
+#----------------------------------------Code By Chris------------------------------------------------
+
+
+
+
+#---------------------------------------End Code By Chris---------------------------------------------
 

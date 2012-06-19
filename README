@@ -7,7 +7,9 @@ Calibration is stored in cal.py
   * run rfi_init BEFORE doing anything else.
   * If you reinit, then you must restart any graphs or captures (else scaling and timestamps will be wrong).
   * Plotted spectrum is not accurate (scales are wrong) -- only an indication. This is because we collapse (crudely!) the number of channels for plotting by simply summing adjacent channels. The annotations are accurate.
-  * Antenna calibration files should be comma separated values with at least two columns, headed 'freq_hz' and 'gain_dbi' with the appropriate values. Do not include any other header information. Some examples are included, however, please check https://github.com/ska-sa/rfi_ant_cal for the latest cal files.
+  * Antenna calibration files should be comma separated values with at least two columns, headed 'freq_hz' and 'gain_dbi' with the appropriate values. Do not include any other header information.
+
+Rev 0.0.8   Altered code to use configuration file at src/system_parameters.
 
 Rev 0.0.7   Bugfix to rfi_spectrum.py with fft_scale/fft_shift when reading back files,
             New bitstream using new snap blocks

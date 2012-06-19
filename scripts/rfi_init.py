@@ -7,14 +7,15 @@ Hard-coded for 32bit unsigned numbers.
 '''
 
 
-import corr,time,numpy,struct,sys,logging,rfi_sys
+import corr,time,numpy,struct,sys,logging,rfi_sys, os
 
 def exit_fail():
     print 'FAILURE DETECTED. Log entries:\n',
     try:
         r.lh.printMessages()
         r.fpga.stop()
-    except:
+    except Exception as e:
+        print e
         pass
     raise
     exit()
@@ -29,6 +30,7 @@ def exit_clean():
 
 if __name__ == '__main__':
     from optparse import OptionParser
+
 
     p = OptionParser()
     p.set_usage('spectrometer.py <ROACH_HOSTNAME_or_IP> [options]')
@@ -49,7 +51,7 @@ if __name__ == '__main__':
     fpga_prog=opts.fpga_prog
 
 try:
-    r = rfi_sys.cam.spec()
+    r = rfi_sys.cam.spec(os.path.join('..', 'src', 'system_parameters'))
     #r = rfi_sys.rfi_sys(mode=args[0])
     print 'Connecting to ROACH...',
     r.logger.setLevel(logging.DEBUG)
@@ -142,7 +144,8 @@ try:
 
 except KeyboardInterrupt:
     exit_clean()
-except:
+except Exception as e:
+    print e
     exit_fail()
 
 exit_clean()

@@ -1,7 +1,7 @@
 from distutils.core import setup, Extension
 import os, sys, glob
 
-__version__ = '0.0.7'
+__version__ = '0.0.8'
 
 setup(name = 'rfi_sys',
     version = __version__,

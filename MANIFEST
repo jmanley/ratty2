@@ -1,0 +1,11 @@
+README
+setup.py
+scripts/rfi_init.py
+scripts/rfi_plot_adc_oneshot.py
+scripts/rfi_spectrum.py
+scripts/rfi_time.py
+src/__init__.py
+src/av_spec2.py
+src/cal.py
+src/cam.py
+src/system_parameters

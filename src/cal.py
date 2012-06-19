@@ -1,4 +1,5 @@
-import numpy,scipy,scipy.interpolate
+# -*- coding: utf-8 -*-
+import numpy,scipy,scipy.interpolate, iniparse
 
 
 #smoothing functions from http://www.swharden.com/blog/2008-11-17-linear-data-smoothing-in-python/
@@ -164,7 +165,9 @@ def gain_from_af(freqs,afs):
 
 def ant_gains(ant,freqs):
     """Retrieves antenna gain mapping from /etc/rfi_sys/cal_files/ant.csv file and interpolates data to return values at 'freqs'."""
-    cal_freqs,cal_gains=get_gains_from_csv('/etc/rfi_sys/cal_files/'+ant+'.csv')
+    #---------------------------------------------------------Edit By Chris------------------------------------------------
+    cal_freqs,cal_gains=get_gains_from_csv(cal_files(ant +'.csv'))
+    #------------------------------------------------------End Edit By Chris----------------------------------------------
     inter_freqs=scipy.interpolate.interp1d(cal_freqs,cal_gains,kind='linear')
     return inter_freqs(freqs)
 
@@ -184,9 +187,22 @@ def plot_ant_factor(ant,freqs):
     pylab.xlabel('Frequency (MHz)')
     pylab.ylabel('Antenna factor (dBuV/m)')
 
+
+#--------------------------------------------------------------Edited By Chris----------------------------------------------------------
 def bandshape(freqs):
     """Returns the system bandshape in dB, evaluated at 'freqs'."""
-    return ant_gains('bandpass',freqs)
+    import iniparse, os
+    config_file = os.path.join('..', 'src', 'system_parameters')
+    try:
+        sys_config = iniparse.INIConfig(open(config_file, 'rb'))
+        return ant_gains(sys_config['analogue_frontend']['system_bandpass'],freqs)
+    except Exception as e:
+        print e
+        raise
+
+#--------------------------------------------------------End Edit By Chris---------------------------------------------------------------
+
+
 
 def polyfit(freqs,gains,degree=9):
     """Just calls numpy.polyfit. Mostly here as a reminder."""
@@ -248,76 +264,93 @@ def get_calibrated_spectrum(freqs,data,n_accs,fft_scale,rf_gain,ant_factor=None,
         data_return += ant_factor 
     return data_return
 
+def getDictFromCSV(filename):
+    import csv
+    f = open(filename)
+    f.readline()
+    reader = csv.reader(f, delimiter=',')
+    mydict = dict()
+    for row in reader:
+        mydict[float(row[0])] = float(row[1])
+    return mydict
+
+def cal_files(filename):
+    import os
+    return os.path.join('..', 'cal_files', filename)
+
 #front-end gain in dB.
 fe_gain=20.0
 
+#------------------------------------------------------Edited by Chris----------------------------------------------------------
+atten_gain_map = getDictFromCSV(cal_files("%s.csv"%(iniparse.INIConfig(open("../src/system_parameters", 'rb'))['analogue_frontend']['atten_gain_map'])))
+#--------------------------------------------------------End Edited By Chris----------------------------------------------
 #atten_gain_map maps the selected attenuator level to actual system gain. 
-atten_gain_map={
--11.50:-11.5,
--11.00:-11.,
--10.50:-10.5,
--10.00:-10.,
--9.50:-9.5,
--9.00:-9.,
--8.50:-8.5,
--8.00:-8.,
--7.50:-7.5,
--7.00:-7.,
--6.50:-6.5,
--6.00:-6.,
--5.50:-5.5,
--5.00:-5.,
--4.50:-4.5,
--4.00:-4.,
--3.50:-3.5,
--3.00:-3.,
--2.50:-2.5,
--2.00:-2.,
--1.50:-1.5,
--1.00:-1.,
--0.50:-0.5,
-0    : 0.,
-0.50:0.5,
-1.    : 1.   ,
-1.5   : 1.5  ,
-2.    : 2.   ,
-2.5   : 2.5  ,
-3.    : 3.   ,
-3.5   : 3.5  ,
-4.    : 4.   ,
-4.5   : 4.5  ,
-5.    : 5.   ,
-5.5   : 5.5  ,
-6.    : 6.   ,
-6.5   : 6.5  ,
-7.    : 7.   ,
-7.5   : 7.5  ,
-8.    : 8.   ,
-8.5   : 8.5  ,
-9.    : 9.   ,
-9.5   : 9.5  ,
-10.   : 10.  ,
-10.5  : 10.5 ,  
-11.   : 11.  ,
-11.5  : 11.5 ,
-12.   : 12.  ,
-12.5  : 12.5 ,
-13.   : 13.  ,
-13.5  : 13.5 ,
-14.   : 14.  ,
-14.5  : 14.5 ,
-15.   : 15.  ,
-15.5  : 15.5 ,
-16.   : 16.  ,
-16.5  : 16.5 ,
-17.   : 17.  ,
-17.5  : 17.5 ,
-18.   : 18.  ,
-18.5  : 18.5 ,
-19.   : 19.  ,
-19.5  : 19.5 ,
-20.   : 20.  ,
-}   
+# atten_gain_map={
+# -11.50:-11.5,
+# -11.00:-11.,vv
+# -10.50:-10.5,
+# -10.00:-10.,
+# -9.50:-9.5,
+# -9.00:-9.,
+# -8.50:-8.5,
+# -8.00:-8.,
+# -7.50:-7.5,
+# -7.00:-7.,
+# -6.50:-6.5,
+# -6.00:-6.,
+# -5.50:-5.5,
+# -5.00:-5.,
+# -4.50:-4.5,
+# -4.00:-4.,
+# -3.50:-3.5,
+# -3.00:-3.,
+# -2.50:-2.5,
+# -2.00:-2.,
+# -1.50:-1.5,
+# -1.00:-1.,
+# -0.50:-0.5,
+# 0    : 0.,
+# 0.50:0.5,
+# 1.    : 1.   ,
+# 1.5   : 1.5  ,
+# 2.    : 2.   ,
+# 2.5   : 2.5  ,
+# 3.    : 3.   ,
+# 3.5   : 3.5  ,
+# 4.    : 4.   ,
+# 4.5   : 4.5  ,
+# 5.    : 5.   ,
+# 5.5   : 5.5  ,
+# 6.    : 6.   ,
+# 6.5   : 6.5  ,
+# 7.    : 7.   ,
+# 7.5   : 7.5  ,
+# 8.    : 8.   ,
+# 8.5   : 8.5  ,
+# 9.    : 9.   ,
+# 9.5   : 9.5  ,
+# 10.   : 10.  ,
+# 10.5  : 10.5 ,  
+# 11.   : 11.  ,
+# 11.5  : 11.5 ,
+# 12.   : 12.  ,
+# 12.5  : 12.5 ,
+# 13.   : 13.  ,
+# 13.5  : 13.5 ,
+# 14.   : 14.  ,
+# 14.5  : 14.5 ,
+# 15.   : 15.  ,
+# 15.5  : 15.5 ,
+# 16.   : 16.  ,
+# 16.5  : 16.5 ,
+# 17.   : 17.  ,
+# 17.5  : 17.5 ,
+# 18.   : 18.  ,
+# 18.5  : 18.5 ,
+# 19.   : 19.  ,
+# 19.5  : 19.5 ,
+# 20.   : 20.  ,
+# }   
 
 atten_gain_map_iadc={
 -31.50:-31.9181910417206964325487206224352,
