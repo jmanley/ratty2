@@ -5,6 +5,9 @@ Plots the spectrum from an RFI monitoring spectrometer.\n
 
 '''
 #Revisions:\n
+#2012-06-14  JRM Overhaul to more object-oriented code.
+#                Diff plots now have maxhold y-axis and peak annotations.
+#                Added option to only plot one capture (useful for interacting with a single spectrum)
 #2011-03-17  JRM Removed lin plots, added cal
 #2011-03-xx  JRM Added various features - logging to file, lin/log plots, status reporting etc.
 #2011-02-24  JRM Port to RFI system
@@ -13,12 +16,10 @@ Plots the spectrum from an RFI monitoring spectrometer.\n
 #2010-08-05: JRM Mods to support variable snap block length.
 #1.1 PVP Initial.
 
-#TODO: FIX r.freqs now in Hz (not MHz)
-#TODO: read back from files rather than live system
 
 import matplotlib
 matplotlib.use('TkAgg')
-import pylab,h5py,rfi_sys, time, corr, numpy, struct, sys, logging, os
+import pylab,h5py,ratty1, time, corr, numpy, struct, sys, logging, os
 import iniparse
 
 # what format are the snap names and how many are there per antenna
@@ -26,24 +27,15 @@ bram_out_prefix = 'store'
 # what is the bram name inside the snap block
 bramName = 'bram'
 verbose=True
-n_chans_ignore_top=900
-n_chans_ignore_bot=100
 freq_range='0,-1'.split(',')
 max_level=numpy.NINF
 min_level=numpy.Inf
+dmax_level=numpy.NINF
+dmin_level=numpy.Inf
 cal_mode='full'
 
 def exit_fail():
-    print 'FAILURE DETECTED. Log entries:\n',
-#    try:
-#        f.flush()
-#        f.close()
-#        r.lh.printMessages()
-#        r.fpga.stop()
-#    except:
-#        pass
-    if verbose:
-        raise
+    raise
     exit()
 
 def exit_clean():
@@ -57,52 +49,35 @@ def exit_clean():
     exit()
 
 def filewrite(spectrum,timestamp,acc_cnt,status):
-    if not file:
-        cnt=f['spectra'].shape[0]-1
-        print '  Storing entry %i...'%cnt,
-        sys.stdout.flush()
-        f['spectra'][cnt]   = spectrum
-        f['acc_cnt'][cnt]   = acc_cnt
-        f['timestamp'][cnt] = timestamp
-        f['adc_overrange'][cnt] = status['adc_overrange']
-        f['fft_overrange'][cnt] = status['fft_overrange']
-        f['adc_shutdown'][cnt] = status['adc_bad']
-        f['adc_level'][cnt] = status['adc_level']
-        f['input_level'][cnt] = status['input_level']
-        f['adc_temp'][cnt] = status['adc_temp']
-        f['ambient_temp'][cnt] = status['ambient_temp']
-        for name in ['spectra','acc_cnt','timestamp','adc_overrange','fft_overrange','adc_shutdown','adc_level','input_level','adc_temp','ambient_temp']:
-            f[name].resize(cnt+2, axis=0)
-        print 'done'
+    cnt=f['spectra'].shape[0]-1
+    print '  Storing entry %i...'%cnt,
+    sys.stdout.flush()
+    f['spectra'][cnt]   = spectrum
+    f['acc_cnt'][cnt]   = acc_cnt
+    f['timestamp'][cnt] = timestamp
+    f['adc_overrange'][cnt] = status['adc_overrange']
+    f['fft_overrange'][cnt] = status['fft_overrange']
+    f['adc_shutdown'][cnt] = status['adc_shutdown']
+    f['adc_level'][cnt] = status['adc_level']
+    f['input_level'][cnt] = status['input_level']
+    f['adc_temp'][cnt] = status['adc_temp']
+    f['ambient_temp'][cnt] = status['ambient_temp']
+    for name in ['spectra','acc_cnt','timestamp','adc_overrange','fft_overrange','adc_shutdown','adc_level','input_level','adc_temp','ambient_temp']:
+        f[name].resize(cnt+2, axis=0)
+    print 'done'
 
 
 def getUnpackedData(last_cnt):
-    if file==None:
-        #wait for a new integration:
-        while r.fpga.read_uint('acc_cnt') == last_cnt: 
-    #        print '.',
-    #        sys.stdout.flush()
-            time.sleep(0.1)
-    #    print ''
-        # get the data
-        spectrum=numpy.zeros(r.n_chans)
-        for i in range(r.n_par_streams):
-            spectrum[i::r.n_par_streams] = numpy.fromstring(r.fpga.read('%s%i'%(bram_out_prefix,i),r.n_chans/r.n_par_streams*8),dtype=numpy.uint64).byteswap()
-        stat=r.status_get()
-        ampls=r.adc_amplitudes_get()
-        stat['adc_level']=ampls['adc_dbm']
-        stat['input_level']=ampls['input_dbm']
-        stat['adc_temp']=r.adc_temp_get()
-        stat['ambient_temp']=r.ambient_temp_get()
-        last_cnt=r.fpga.read_uint('acc_cnt')
-        timestamp=time.time()
+    if play_filename==None:
+        spectrum, timestamp, last_cnt, stat = r.getUnpackedData()
+        filewrite(spectrum,timestamp,last_cnt,stat)
     else:
         print 'Press enter to grab plot number %i...'%last_cnt,
         raw_input()
         if last_cnt+1>=f['spectra'].shape[0]: exit_clean()
         spectrum = f['spectra'][last_cnt] 
         stat={'adc_overrange':f['adc_overrange'][last_cnt],
-                'adc_bad':f['adc_shutdown'][last_cnt],
+                'adc_shutdown':f['adc_shutdown'][last_cnt],
                 'fft_overrange':f['fft_overrange'][last_cnt],
                 'input_level':f['input_level'][last_cnt],
                 'adc_level':f['adc_level'][last_cnt]}
@@ -111,7 +86,7 @@ def getUnpackedData(last_cnt):
         print 'got all data'
 
     print '[%i] %s: input level: %5.2f dBm (ADC %5.2f dBm).'%(last_cnt,time.ctime(timestamp),stat['input_level'],stat['adc_level']),
-    if stat['adc_bad']: print 'ADC selfprotect due to overrange!',
+    if stat['adc_shutdown']: print 'ADC selfprotect due to overrange!',
     elif stat['adc_overrange']: print 'ADC is clipping!',
     elif stat['fft_overrange']: print 'FFT is overflowing!',
     else: print 'all ok.',
@@ -129,22 +104,19 @@ def find_n_max(data,n_max,ignore_adjacents=False):
             max_levs[loc]=d
             max_locs[loc]=n
             if numpy.min(max_levs)>this_max_lev: this_max_lev=numpy.min(max_levs)
-    return max_levs,max_locs     
+    inds = max_levs.argsort()[::-1]
+    return max_levs[inds],max_locs[inds]     
 
 # callback function to draw the data for all the required polarisations
 def drawDataCallback(last_cnt):
-
     unpackedData, timestamp, last_cnt,stat = getUnpackedData(last_cnt)
-    filewrite(unpackedData,timestamp,last_cnt,stat)
-    calData=rfi_sys.cal.get_calibrated_spectrum(freqs,unpackedData,n_accs,fft_scale,rf_gain,bandshape=bp,ant_factor=af) #returns spectrum in dBm
+    calData=co.get_calibrated_spectrum(unpackedData, rf_gain) #returns spectrum in dBm
 
-    median_lev_db=numpy.median(calData[20:-20])
-    calData[0:n_chans_ignore_bot]=calData[n_chans_ignore_bot]
-    calData[-n_chans_ignore_top:]=calData[-n_chans_ignore_top]
-    maxs,locs=find_n_max(calData[n_chans_ignore_bot:-n_chans_ignore_top],n_top,ignore_adjacents=True)
+#    calData[0:chanlow]=calData[n_chans_ignore_bot]
+#    calData[chan_high:]=calData[-n_chans_ignore_top]
 
     subplot1.cla()
-    if stat['fft_overrange'] or stat['adc_bad'] or stat['adc_overrange']:
+    if stat['fft_overrange'] or stat['adc_shutdown'] or stat['adc_overrange']:
         subplot1.set_title('Spectrum %i as at %s (input power: %5.1fdBm; ADC level %5.1fdBm)'%(last_cnt,time.ctime(timestamp),stat['input_level'],stat['adc_level']),bbox=dict(facecolor='red', alpha=0.5))
     else:
         subplot1.set_title('Spectrum %i as at %s (input power: %5.1fdBm; ADC level %5.1fdBm)'%(last_cnt,time.ctime(timestamp),stat['input_level'],stat['adc_level']))
@@ -156,9 +128,6 @@ def drawDataCallback(last_cnt):
         subplot1.plot(freqs[chan_low:chan_high]/1.e6,baseline[chan_low:chan_high],'r',linewidth=5,alpha=0.5)
 
     subplot1.plot(freqs[chan_low:chan_high]/1.e6,calData[chan_low:chan_high],'b')
-#    print 'Freqs:',freqs
-#    print 'locs:',locs
-#    print 'data:',calData
 
     ##collapse data for plotting:
     #collapse_factor=len(unpackedData)/plot_chans
@@ -177,22 +146,32 @@ def drawDataCallback(last_cnt):
     
 
     if plot_diff:
+        dd=calData[chan_low:chan_high]-baseline[chan_low:chan_high]
         subplot2.cla()
-        subplot2.plot(freqs[chan_low:chan_high]/1.e6,calData[chan_low:chan_high]-baseline[chan_low:chan_high])
+        subplot2.plot(freqs[chan_low:chan_high]/1.e6,dd)
         subplot2.set_ylabel('Difference (dB)')
+        maxs,locs=find_n_max(dd,n_top,ignore_adjacents=True)
+        maxfreqs=[freqs[locs[i]+chan_low]/1.e6 for i in range(n_top)]
+        for i in range(n_top):
+            subplot2.annotate('%iMHz:%3.1fdB'%(numpy.round(maxfreqs[i]),maxs[i]),(maxfreqs[i],maxs[i]))
+        global dmin_level
+        global dmax_level
+        dmin_level=min(min(dd),dmin_level)
+        dmax_level=max(max(dd),dmax_level)
+        subplot2.set_ylim(dmin_level-10,dmax_level+10)
 
+    median_lev_db=numpy.median(calData[chan_low:chan_high])
     #Plot a horizontal line representing the average noise floor:
-    subplot1.hlines(median_lev_db,freqs[chan_low]/1e6,freqs[chan_high]/1.e6)
+    subplot1.hlines(median_lev_db,freqs[chan_low+1]/1e6,freqs[chan_high-1]/1.e6)
     subplot1.annotate('%3.1f%s'%(median_lev_db,units),(freqs[chan_high]/1.e6,median_lev_db))
 
    
     #annotate:
+    maxs,locs=find_n_max(calData[chan_low:chan_high],n_top,ignore_adjacents=True)
+    maxfreqs=[freqs[locs[i]+chan_low]/1.e6 for i in range(n_top)]
     for i in range(n_top):
-        freq=freqs[locs[i]+n_chans_ignore_bot]/1.e6
-        #lev=10*(numpy.log10(maxs[i])) #-numpy.log10(median_lev))
-        lev=maxs[i]
-        print '  Local max at chan %5i (%6.2fMHz): %6.2f%s'%(locs[i]+n_chans_ignore_bot,freq,lev,units)
-        subplot1.annotate('%iMHz:%3.1f%s'%(numpy.round(freq),lev,units),(freq,lev))
+        print '  Local max at chan %5i (%6.2fMHz): %6.2f%s'%(locs[i]+chan_low,maxfreqs[i],maxs[i],units)
+        subplot1.annotate('%iMHz:%3.1f%s'%(numpy.round(maxfreqs[i]),maxs[i],units),(maxfreqs[i],maxs[i]))
 
         #if plot_type == 'lin':
         #    subplot.annotate('%iMHz:%3.1fdB'%(freq,lev),(freq,collapseddata[locs[i]/collapse_factor]))
@@ -202,32 +181,35 @@ def drawDataCallback(last_cnt):
     global min_level
     global max_level
     #local_min=min(calData)
-    min_level=min(min(calData),min_level)
-    max_level=max(max(calData),max_level)
-    #subplot1.set_ylim(min_level-10,max_level+10)
+    min_level=min(min(calData[chan_low:chan_high]),min_level)
+    max_level=max(max(calData[chan_low:chan_high]),max_level)
+    subplot1.set_ylim(min_level-10,max_level+10)
     
     fig.canvas.draw()
-    fig.canvas.manager.window.after(100, drawDataCallback, last_cnt)
+    if opts.update:
+        fig.canvas.manager.window.after(100, drawDataCallback, last_cnt)
 
 if __name__ == '__main__':
     from optparse import OptionParser
     p = OptionParser()
-    p.set_usage('%prog [options] MODE')
+    p.set_usage('%prog [options]')
     p.add_option('-v', '--verbose', dest = 'verbose', action = 'store_true', help = 'Enable debug logging mode.')
     p.add_option('-b', '--baseline', dest = 'baseline', action = 'store_true', default=False,
         help = 'Keep the first trace displayed as a baseline.')
     p.add_option('-d', '--diff', dest = 'diff', action = 'store_true', default=False,
         help = 'Also plot the difference between the first trace and subsequent spectra.')
-    #p.add_option('-c', '--cal', dest = 'cal',type='string',default='full',
-    #     help = 'Choose the calibration mode (none, full, scaled etc). Default: full.')
-    p.add_option('-r', '--freq_range', dest = 'freq_range',type='string',default='0,-1',
-         help = 'Select a frequency range in MHz to plot. Negative frequencies are supported. Default: 0,-1.')
+    p.add_option('-r', '--freq_range', dest = 'freq_range',type='string',default=None,
+         help = 'Select a frequency range in MHz to plot. Negative frequencies are supported. Default is to ignore top and bottom 50MHz: 50,-50.')
     p.add_option('-s', '--n_top', dest='n_top', type='int',default=5,
         help='Find the top N spiky RFI candidates. Default: 5')
-    p.add_option('-f', '--file', dest = 'file', type='string', 
+    p.add_option('-f', '--play_file', dest = 'play_file', type='string', default=None,
         help = 'Open an existing file for analysis.')
-    p.add_option('-a', '--ant', dest = 'ant', type='string', default = 'none', 
-        help = 'Choose an antenna calibration file. Note that this will auto-select y-axis units to be dBuV/m. Default:none')
+    p.add_option('-e', '--save_to_file', dest = 'save_to_file', type='string',default=None,
+        help = 'Specify the destination filename.')
+    p.add_option('-c', '--config_file', dest = 'config_file', type='string',default=None,
+        help = 'Specify the configuration file to use.')
+    p.add_option('-u', '--update', dest = 'update', action = 'store_false',default=True,
+        help = 'Do not update the plots (only plot a single capture).')
 
 #    p.add_option('-n', '--n_chans', dest='n_chans', type='int',default=512,
 #        help='Plot this number of channels. Default: 512')
@@ -238,38 +220,32 @@ if __name__ == '__main__':
     p.set_description(__doc__)
     opts, args = p.parse_args(sys.argv[1:])
 
-    usrlog='_'.join(args)
+    usrlog=('Starting file at %i.'%(int(time.time()))).join(args)
     if usrlog=='': usrlog=str(int(time.time()))
-    if opts.file: file=opts.file
-    else: file=None
     #plot_chans=opts.n_chans
-    freq_range=opts.freq_range.split(',')
-    ant=opts.ant
+    freq_range=opts.freq_range
+    #ant=opts.ant
     n_top=opts.n_top
     verbose=opts.verbose
     plot_baseline=opts.baseline
     plot_diff = opts.diff
     #cal_mode=opts.cal
-    
+    config_file = opts.config_file
+    play_filename=opts.play_file
 
 try:
-    if file==None:
-        print 'Connecting to ROACH...',
-        # make the correlator object
-        #-------------------------------------------------------Edit  By Chris--------------------------------------------------
-        r = rfi_sys.cam.spec(os.path.join('..', 'src', 'system_parameters'))  #Change system_parameters to use different config file, the file must be in src directory
-        #-------------------------------------------------------End Edit By Chris----------------------------------------------------
-        #r = rfi_sys.rfi_sys(mode=args[0])
+    if play_filename==None:
+        r = ratty1.cam.spec(config_file=config_file)
+        co=r.cal
+        print 'Config file %s parsed ok!'%(r.config_file)
+        print 'Connecting to ROACH %s...'%r.config['roach_ip_str'],
+        r.connect()
 
         if verbose:
             r.logger.setLevel(logging.DEBUG)
         else:
             r.logger.setLevel(logging.INFO)
         print 'done.'
-
-        if r.spectrum_bits != 64: 
-            print 'ERR: Sorry, this is only for 64 bit systems.'
-            exit()
 
         acc_time,n_accs = r.acc_time_get()
         freqs=r.freqs
@@ -284,7 +260,8 @@ try:
         filename=usrlog + ".spec.h5"
         print 'Starting file %s.'%filename
         f = h5py.File(filename, mode="w")
-#        f.create_dataset('spectra',shape=[1,r.n_chans],dtype=numpy.int64,maxshape=[None,r.n_chans])
+        f['/'].attrs['usrlog']=usrlog
+
         f.create_dataset('spectra',shape=[1,r.n_chans],maxshape=[None,r.n_chans])
         f.create_dataset('acc_cnt',shape=[1],maxshape=[None],dtype=numpy.uint32)
         f.create_dataset('timestamp',shape=[1],maxshape=[None],dtype=numpy.uint32)
@@ -295,82 +272,72 @@ try:
         f.create_dataset('adc_temp',shape=[1],maxshape=[None],dtype=numpy.float)
         f.create_dataset('ambient_temp',shape=[1],maxshape=[None],dtype=numpy.float)
         f.create_dataset('input_level',shape=[1],maxshape=[None],dtype=numpy.float)
-
-        f['/'].attrs['n_chans']=n_chans
+        for key in r.config.config.keys():
+            #print 'Storing',key
+            try:
+                f['/'].attrs[key]=r.config[key]
+            except:
+                try:
+                    f[key]=r.config[key]
+                except TypeError:
+                    if r.config[key]==None: f['/'].attrs[key]='none'
+                    elif type(r.config[key])==dict: 
+                        f[key]=r.config[key].items()
+                        print 'Stored a dict!'
         f['/'].attrs['n_accs']=n_accs
-        f['/'].attrs['bitstream']=r.bitstream
-        f['/'].attrs['bandwidth']=bandwidth
-        f['/'].attrs['adc_type']=r.adc_type
-        f['/'].attrs['spectrum_bits']=r.spectrum_bits
-        f['/'].attrs['fft_shift']=fft_shift
         f['/'].attrs['rf_gain']=rf_gain
-        f['/'].attrs['usrlog']=usrlog
 
         last_cnt=r.fpga.read_uint('acc_cnt')
 
-
     else:
-        print 'Opening file %s...'%file
-        f=h5py.File(file,'r')
-        usrlog      =f['/'].attrs['usrlog']
         last_cnt=0
+        print 'Opening file %s...'%play_filename
+        f=h5py.File(play_filename,'r')
+        usrlog=f['/'].attrs['usrlog']
+        print 'USRLOG: %s'%usrlog
+        conf_ovr=dict(f['/'].attrs)
+        for key in f.keys():
+            if not key in ['raw_dumps','timestamp','adc_overrange','fft_overrange','adc_shutdown','adc_level','input_level']:
+                print 'trying',key
+                if len(f[key])>1: conf_ovr[key]=f[key][:]
+                else: conf_ovr[key]=f[key]
+        conf_ovr['atten_gain_map']=dict(conf_ovr['atten_gain_map'])
+        co=ratty1.cal.cal(**conf_ovr)
+
         n_accs      =f['/'].attrs['n_accs']
         n_chans     =f['/'].attrs['n_chans']
         usrlog      =f['/'].attrs['usrlog']
         bandwidth   =f['/'].attrs['bandwidth']
         rf_gain     =f['/'].attrs['rf_gain']
         fft_shift   =f['/'].attrs['fft_shift']
-        freqs       =numpy.arange(n_chans)*float(bandwidth)/n_chans #channel center freqs in Hz
-        fft_scale   =2**(rfi_sys.cal.bitcnt(fft_shift))
+        freqs       =co.config['freqs']
+        fft_scale   =2**(ratty1.cal.bitcnt(fft_shift))
 
-#--------------------------------------------------------------------Edited By Chris----------------------------------------------------------
-    config_file = os.path.join('..', 'src', 'system_parameters')
-    print 'hey'
-    af = None
-    print 'hey'
-    try:
-        sys_config = iniparse.INIConfig(open(config_file, 'rb'))
-        
-    except Exception as e: 
-        print "Erorr accessing antenna bandpass file from config file"
-        print e
 
-    if sys_config['analogue_frontend']['antenna_bandpass'].strip() != 'none':
-        af=rfi_sys.cal.af_from_gain(freqs,rfi_sys.cal.ant_gains(sys_config['analogue_frontend']['antenna_bandpass'],freqs)) #antenna factor
-
-        if file==None:
-            f['antena_factor']=af
-            f['/'].attrs['antena_calfile']=sys_config['analogue_frontend']['antenna_bandpass'].strip()
-#----------------------------------------------------------------End Edit By Chris----------------------------------------------------------------
-        units='dBuV/m'
-        #rfi_sys.cal.plot_ant_gain(opts.ant,freqs)
-        #rfi_sys.cal.plot_ant_factor(opts.ant,freqs)
-        #pylab.show()
-    else:
-        af=None
+    if co.config['antenna_bandpass_calfile'] == 'none':
         units='dBm'
-    print 'here'
-    bp=rfi_sys.cal.bandshape(freqs)
-    print 'and here'
-    #rfi_sys.cal.plot_bandshape(freqs)
-    if file==None:
-        f['bandshape']=bp
+    else:
+        units='dBuV/m'
 
+    bp=co.system_bandpass
+    af=co.ant_factor
 
-    if opts.plot or file != None:
-        chan_low =rfi_sys.cal.freq_to_chan(int(freq_range[0])*1e6,bandwidth,n_chans)
-        chan_high=rfi_sys.cal.freq_to_chan(int(freq_range[1])*1e6,bandwidth,n_chans)
-        print 'Plotting channels %i (%5.1fMHz) to %i (%5.1fMHz).'%(chan_low,freqs[chan_low]/1.e6,chan_high,freqs[chan_high]/1.e6)
+    if freq_range==None:    
+        chan_low =co.freq_to_chan(co.config['ignore_low_freq'])
+        chan_high=co.freq_to_chan(co.config['ignore_high_freq'])
+    else:
+        chan_low =co.freq_to_chan(int(freq_range.split(',')[0])*1e6)
+        chan_high=co.freq_to_chan(int(freq_range.split(',')[1])*1e6)
+    print 'Working with channels %i (%5.1fMHz) to %i (%5.1fMHz).'%(chan_low,freqs[chan_low]/1.e6,chan_high,freqs[chan_high]/1.e6)
+
+    if opts.plot or play_filename != None:
         # set up the figure with a subplot for each polarisation to be plotted
         fig = matplotlib.pyplot.figure()
         if opts.diff or opts.baseline:
             print 'Fetching baseline...',
             sys.stdout.flush()
             unpackedData, timestamp, last_cnt,stat = getUnpackedData(last_cnt)
-            filewrite(unpackedData,timestamp,last_cnt,stat)
-            baseline=rfi_sys.cal.get_calibrated_spectrum(freqs,unpackedData,n_accs,fft_scale,rf_gain,bandshape=bp,ant_factor=af) #returns spectrum in dBm
-            baseline[0:n_chans_ignore_bot]=baseline[n_chans_ignore_bot]
-            baseline[-n_chans_ignore_top:]=baseline[-n_chans_ignore_top]
+            baseline=co.get_calibrated_spectrum(unpackedData, rf_gain) #returns spectrum in dBm
             print 'done'
         if opts.diff: 
             subplot1 = fig.add_subplot(2, 1, 1)
@@ -382,7 +349,12 @@ try:
     else:
         while(1):
             unpackedData, timestamp, last_cnt,stat = getUnpackedData(last_cnt)
-            filewrite(unpackedData,timestamp,last_cnt,stat)
+            calData=r.cal.get_calibrated_spectrum(unpackedData, rf_gain) #returns spectrum in dBm
+            maxs,locs=find_n_max(calData[chan_low:chan_high],n_top,ignore_adjacents=True)
+            maxfreqs=[freqs[locs[i]+chan_low]/1.e6 for i in range(n_top)]
+            for i in range(n_top):
+                print '  Local max at chan %5i (%6.2fMHz): %6.2f%s'%(locs[i]+chan_low,maxfreqs[i],maxs[i],units)
+
 
 except KeyboardInterrupt:
     exit_clean()

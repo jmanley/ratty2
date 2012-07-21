@@ -6,5 +6,5 @@ Email: jason_manley at hotmail.com
 Revisions:
 2011-03-02  JRM First release
 """
-import corr,cam,cal
+import corr,cam,cal,conf
 
