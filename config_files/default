@@ -1,0 +1,26 @@
+[digital_system_parameters]
+bitstream = r_spec_1ghz_16k_kadc_r108_2011_Nov_09_1541.bof
+n_chans = 16384
+n_par_streams = 4
+bandwidth = 900000000
+adc_type = katadc
+desired_rf_level = -20
+spectrum_bits = 64
+fft_shift = 16383
+acc_period=1 
+adc_levels_acc_len=65536
+
+[connection]
+katcp_port = 7147
+roach_ip = 192.168.64.112
+
+[analogue_frontend]
+#set rf_gain to desired level in dB, or else specify 'auto' for automatic
+ignore_low_freq=0
+ignore_high_freq=900000000
+fe_gain=0
+rf_gain=auto
+#Enter none if there is no cal file:
+atten_gain_map = none
+system_bandpass = none
+antenna_bandpass = none

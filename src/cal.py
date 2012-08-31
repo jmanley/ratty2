@@ -153,19 +153,20 @@ class cal:
 
     def plot_bandshape(self,freqs):
         import pylab
-        pylab.plot(self.config['freqs']/1e6,self.config['system_bandpass'])
+        pylab.plot(bandshape(freqs))
         pylab.title('Bandpass calibration profile')
         pylab.xlabel('Frequency (Hz)')
         pylab.ylabel('Relative response (dB)')
 
     def plot_atten_gain_map(self):
         import pylab
-        inputs=self.config['atten_gain_map'].keys()
+        inputs=atten_gain_map.keys()
         inputs.sort()
-        pylab.plot(inputs,[self.config['atten_gain_map'][k] for k in inputs])
+        pylab.plot(inputs,[atten_gain_map[k] for k in inputs])
         pylab.title('RF attenuator mapping')
         pylab.xlabel('Requested value (dB)')
         pylab.ylabel('Actual value (dB)')
+
     
     def get_interpolated_gains(self,fileName):
         """Retrieves antenna gain mapping from /etc/rfi_sys/cal_files/ant.csv file and interpolates data to return values at 'freqs'."""
@@ -175,10 +176,10 @@ class cal:
         return inter_freqs(self.config['freqs'])
 
     def plot_ant_gain(self):
-        """Plots the antenna gain as read from the antenna calibration CSV file specified by the system config file."""
+        """Plots the antenna gain as read from a CSV file specified as "ant"."""
         import pylab
-        pylab.plot(self.config['freqs']/1e6,self.config['antenna_bandpass'])
-        pylab.title('Antenna gain %s'%self.config['antenna_bandpass_calfile'])
+        pylab.plot(self.config['freqs']/1e6,self.antenna_bandpass)
+        pylab.title('Antenna gain %s'%self.config['antenna_bandpass_file'])
         pylab.xlabel('Frequency (MHz)')
         pylab.ylabel('Relative response (dBi)')
 
@@ -186,7 +187,7 @@ class cal:
         """Plots the antenna factor over the given frequencies as calculated from the specified antenna CSV file."""
         import pylab
         pylab.plot(self.freqs/1e6,self.ant_factor)
-        pylab.title('Antenna factor as a function of frequency (%s)'%self.config['antenna_bandpass_calfile'])
+        pylab.title('Antenna factor as a function of frequency (%s)'%self.config['antenna_bandpass_file'])
         pylab.xlabel('Frequency (MHz)')
         pylab.ylabel('Antenna factor (dBuV/m)')
 
