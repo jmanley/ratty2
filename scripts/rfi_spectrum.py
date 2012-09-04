@@ -55,15 +55,22 @@ def filewrite(spectrum,timestamp,acc_cnt,status):
     f['spectra'][cnt]   = spectrum
     f['acc_cnt'][cnt]   = acc_cnt
     f['timestamp'][cnt] = timestamp
-    f['adc_overrange'][cnt] = status['adc_overrange']
-    f['fft_overrange'][cnt] = status['fft_overrange']
-    f['adc_shutdown'][cnt] = status['adc_shutdown']
-    f['adc_level'][cnt] = status['adc_level']
-    f['input_level'][cnt] = status['input_level']
-    f['adc_temp'][cnt] = status['adc_temp']
-    f['ambient_temp'][cnt] = status['ambient_temp']
-    for name in ['spectra','acc_cnt','timestamp','adc_overrange','fft_overrange','adc_shutdown','adc_level','input_level','adc_temp','ambient_temp']:
+    for name in ['spectra','acc_cnt','timestamp']:
         f[name].resize(cnt+2, axis=0)
+    for stat in status:
+        try:
+            f[stat][cnt]=status[stat]
+            f[stat].resize(cnt+2, axis=0)
+        except KeyError:
+            f.create_dataset(stat,shape=[1],maxshape=[None])
+            #f['adc_overrange'][cnt] = status['adc_overrange']
+            #f['fft_overrange'][cnt] = status['fft_overrange']
+            #f['adc_shutdown'][cnt] = status['adc_shutdown']
+            #f['adc_level'][cnt] = status['adc_level']
+            #f['input_level'][cnt] = status['input_level']
+            #f['adc_temp'][cnt] = status['adc_temp']
+            #f['ambient_temp'][cnt] = status['ambient_temp']
+
     print 'done'
 
 
@@ -168,6 +175,7 @@ def drawDataCallback(last_cnt):
    
     #annotate:
     maxs,locs=find_n_max(calData[chan_low:chan_high],n_top,ignore_adjacents=True)
+    if max(locs)==min(locs): locs=[0 for i in range(n_top)] # in case we don't find a max, locs will be [-inf, -inf, -inf...]
     maxfreqs=[freqs[locs[i]+chan_low]/1.e6 for i in range(n_top)]
     for i in range(n_top):
         print '  Local max at chan %5i (%6.2fMHz): %6.2f%s'%(locs[i]+chan_low,maxfreqs[i],maxs[i],units)
@@ -265,13 +273,9 @@ try:
         f.create_dataset('spectra',shape=[1,r.n_chans],maxshape=[None,r.n_chans])
         f.create_dataset('acc_cnt',shape=[1],maxshape=[None],dtype=numpy.uint32)
         f.create_dataset('timestamp',shape=[1],maxshape=[None],dtype=numpy.uint32)
-        f.create_dataset('adc_overrange',shape=[1],maxshape=[None],dtype=numpy.bool)
-        f.create_dataset('fft_overrange',shape=[1],maxshape=[None],dtype=numpy.bool)
-        f.create_dataset('adc_shutdown',shape=[1],maxshape=[None],dtype=numpy.bool)
-        f.create_dataset('adc_level',shape=[1],maxshape=[None],dtype=numpy.float)
-        f.create_dataset('adc_temp',shape=[1],maxshape=[None],dtype=numpy.float)
-        f.create_dataset('ambient_temp',shape=[1],maxshape=[None],dtype=numpy.float)
-        f.create_dataset('input_level',shape=[1],maxshape=[None],dtype=numpy.float)
+        f['/'].attrs['n_accs']=n_accs
+        f['/'].attrs['rf_gain']=rf_gain
+
         for key in r.config.config.keys():
             #print 'Storing',key
             try:
@@ -284,8 +288,6 @@ try:
                     elif type(r.config[key])==dict: 
                         f[key]=r.config[key].items()
                         print 'Stored a dict!'
-        f['/'].attrs['n_accs']=n_accs
-        f['/'].attrs['rf_gain']=rf_gain
 
         last_cnt=r.fpga.read_uint('acc_cnt')
 

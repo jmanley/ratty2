@@ -110,6 +110,14 @@ class rattyconf:
             self.config['adc_v_scale_factor']=1/368.
             self.config['adc_low_level_warning']=-35
             self.config['adc_high_level_warning']=0
+        elif self.config['adc_type'] == 'adc1x1800-10':
+            self.config['sample_clk']=self.config['bandwidth']*2
+            self.config['rf_gain_range']=(-31.5,0,0.5)
+            self.config['adc_demux'] = 4
+            self.config['adc_n_bits'] = 8
+            self.config['adc_v_scale_factor']=1/368.
+            self.config['adc_low_level_warning']=-35
+            self.config['adc_high_level_warning']=0
         else:
             raise RuntimeError("adc_type not understood. expecting katadc or iadc.")
 
@@ -132,7 +140,7 @@ class rattyconf:
         if (self.config['atten_gain_calfile'] != 'none'):
             self.config['atten_gain_map'] = getDictFromCSV(cal_files("%s.csv"%(self.config['atten_gain_calfile'])))
         else:
-            self.config['atten_gain_map'] = {i:i for i in numpy.arange(self.config['rf_gain_range'][0],self.config['rf_gain_range'][1],self.config['rf_gain_range'][2])}
+            self.config['atten_gain_map'] = {i:i for i in numpy.arange(self.config['rf_gain_range'][0],self.config['rf_gain_range'][1]+self.config['rf_gain_range'][2],self.config['rf_gain_range'][2])}
 
     def get_interpolated_gains(self,fileName):
         """Retrieves antenna gain mapping files and interpolates data to return values at 'freqs'."""

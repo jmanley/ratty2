@@ -25,11 +25,6 @@ import matplotlib
 matplotlib.use('TkAgg')
 import ratty1, time, corr, numpy, struct, sys, logging, pylab, h5py, os, iniparse, csv
 
-# what format are the snap names and how many are there per antenna
-snapName = 'snap_adc'
-# what is the bram name inside the snap block
-bramName = 'bram'
-
 def exit_fail():
     print 'FAILURE DETECTED. Log entries:\n',
     try:
@@ -314,6 +309,7 @@ try:
             abp=cald['antenna_bandpass']
         else:
             af=numpy.zeros(n_chans)
+            abp=numpy.zeros(n_chans)
         if r.config['system_bandpass_calfile'] != 'none':
             bp=cald['system_bandpass']
         else:

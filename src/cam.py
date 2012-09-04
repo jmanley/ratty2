@@ -142,8 +142,10 @@ class spec:
         if print_progress:
             print '\tConfigure ADC...',
             sys.stdout.flush()
-        corr.katadc.set_interleaved(self.fpga,0,input_sel)
-        if print_progress: print 'ok, selected input %s.'%input_sel
+        if self.adc_type == 'katadc':
+            corr.katadc.set_interleaved(self.fpga,0,input_sel)
+            if print_progress: print 'selected input %s.'%input_sel,
+        print 'ok'
 
         if print_progress:
             print '\tConfiguring RF gain...',
@@ -295,6 +297,8 @@ class spec:
             corr.katadc.set_interleaved(self.fpga,0,'I')
             time.sleep(0.1)
             corr.katadc.cal_now(self.fpga,0)
+        else:
+            return
         
     def fft_shift_set(self,fft_shift_schedule=-1):
         """Sets the FFT shift schedule (divide-by-two) on each FFT stage. 
@@ -367,16 +371,16 @@ class spec:
         if gain==None:
             self.auto_gain(print_progress=print_progress)
         else:
+            if gain < self.config['rf_gain_range'][0] or gain < self.config['rf_gain_range'][1]:
+                 raise RuntimeError("Invalid gain setting of %i. Valid range for your ADC is %f to %fdB."%(gain,self.config['rf_gain_range'][0],self.config['rf_gain_range'][1]))
             if self.adc_type == 'katadc':
                 #RF switch is in MSb.
-                if gain > 20 or gain < -11.5:
-                     raise RuntimeError("Invalid gain setting of %i. Valid range for KATADC is -11.5 to +20dB."%gain)
                 self.fpga.write_int('adc_ctrl0',(1<<31)+int((20-gain)*2))
             elif self.adc_type == 'iadc':
-                if gain > 0 or gain < -31.5:
-                     raise RuntimeError("Invalid gain setting of %i. Valid range for RFI frontend is -31.5 to 0dB.")
                 self.fpga.write_int('adc_ctrl0',(1<<31)+int((0-gain)*2))
                 #print 'Set RF gain register to %x'%int((0-gain)*2)
+            elif self.adc_type == 'adc1x1800-10':
+                self.fpga.write_int('adc_ctrl0',(1<<31)+int((0-gain)*2))
             else: raise RuntimeError("Sorry, your ADC type is not supported.")
 
     def rf_status_get(self):
@@ -389,6 +393,10 @@ class spec:
             value = self.fpga.read_uint('adc_ctrl0')
             self.rf_gain=0.0-(value&0x3f)*0.5
             return (bool(value&(1<<31)),self.rf_gain)
+        elif self.adc_type == 'adc1x1800-10':
+            value = self.fpga.read_uint('adc_ctrl0')
+            self.rf_gain=0.0-(value&0x3f)*0.5
+            return (bool(value&(1<<31)),self.rf_gain)
         else: raise RuntimeError("Sorry, your ADC type is not supported.")
 
     def adc_amplitudes_get(self):
@@ -397,6 +405,8 @@ class spec:
         if self.adc_type == 'katadc':
             adc_bits=8
         elif self.adc_type == 'iadc':
+            adc_bits=8
+        elif self.adc_type == 'adc1x1800-10':
             adc_bits=8
         rv = {}
         rv['adc_raw']=self.fpga.read_uint('adc_sum_sq0')

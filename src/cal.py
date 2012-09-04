@@ -196,7 +196,7 @@ class cal:
         if frequency<0: 
             frequency=self.config['bandwidth']+frequency
             #print 'you want',frequency
-        if frequency>self.config['bandwidth']: raise RuntimeError("that frequency is too high.")
+        if frequency>=self.config['bandwidth']: raise RuntimeError("that frequency is too high.")
         if n_chans==None:
             n_chans=self.config['n_chans']
         return round(float(frequency)/self.config['bandwidth']*n_chans)%n_chans
